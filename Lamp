@@ -1,0 +1,146 @@
+const int RledPin = 5; 
+const int GledPin = 7;  
+const int BledPin = 6;  
+const int buttonPin = 3;
+
+int ledcolor = 1;      // Mode 1: White, Mode 2: Yellow, Mode 3: Rainbow
+bool ledOn = true;     // Tracks overall ON/OFF state
+
+int buttonState = HIGH;
+int lastButtonState = HIGH;
+
+unsigned long lastPressTime = 0;
+const int doubleClickGap = 300; // Max time (ms) between two clicks for a double-click
+
+// Rainbow Animation Variables
+unsigned long lastGradientUpdate = 0;
+uint16_t hue = 0;
+const unsigned long gradientInterval = 20; // Time (ms) between color shifts (lower = faster)
+
+// Function Prototypes
+void updateLED();
+void printColorName(int color);
+void setRGB(uint8_t r, uint8_t g, uint8_t b);
+void setHueColor(uint16_t hueAngle);
+
+void setup() {
+  Serial.begin(9600);
+  
+  pinMode(RledPin, OUTPUT);
+  pinMode(GledPin, OUTPUT);
+  pinMode(BledPin, OUTPUT);
+  pinMode(buttonPin, INPUT_PULLUP); // Button connected between D3 and GND
+  
+  updateLED();
+}
+
+void loop() {
+  buttonState = digitalRead(buttonPin);
+
+  // Detect button press (HIGH to LOW transition)
+  if (buttonState == LOW && lastButtonState == HIGH) {
+    unsigned long currentTime = millis();
+
+    // Check if press happened within doubleClickGap window
+    if (currentTime - lastPressTime < doubleClickGap) {
+      // --- DOUBLE CLICK DETECTED ---
+      ledOn = !ledOn; // Toggle ON/OFF
+      
+      if (ledOn) {
+        Serial.println("Power: ON");
+      } else {
+        Serial.println("Power: OFF");
+      }
+      
+      lastPressTime = 0; // Reset timer so a 3rd click isn't counted as another double-click
+    } 
+    else {
+      // --- SINGLE CLICK DETECTED ---
+      lastPressTime = currentTime;
+      
+      // Cycle through 3 modes: 1 (White), 2 (Yellow), 3 (Rainbow)
+      ledcolor++;
+      if (ledcolor > 3) {
+        ledcolor = 1;
+      }
+
+      // Automatically turn LED on if it was powered off
+      ledOn = true; 
+
+      printColorName(ledcolor);
+    }
+
+    delay(200); // Simple debounce
+  }
+
+  lastButtonState = buttonState;
+
+  // Continuously update LED state (essential for the smooth Rainbow mode)
+  updateLED();
+}
+
+void printColorName(int color) {
+  if (color == 1) Serial.println("Mode: WHITE");
+  else if (color == 2) Serial.println("Mode: YELLOW");
+  else if (color == 3) Serial.println("Mode: RAINBOW GRADIENT");
+}
+
+void updateLED() {
+  // If powered OFF, drive all pins HIGH (off for Common Anode)
+  if (!ledOn) {
+    digitalWrite(RledPin, HIGH);
+    digitalWrite(GledPin, HIGH);
+    digitalWrite(BledPin, HIGH);
+    return;
+  }
+
+  // --- LED MODES ---
+  if (ledcolor == 1) { 
+    // Mode 1: WHITE (All channels active)
+    digitalWrite(RledPin, LOW);
+    digitalWrite(GledPin, LOW);
+    digitalWrite(BledPin, LOW);
+  } 
+  else if (ledcolor == 2) { 
+    // Mode 2: YELLOW (Red + Green LOW, Blue HIGH for Common Anode)
+    digitalWrite(RledPin, LOW);
+    digitalWrite(GledPin, LOW);
+    digitalWrite(BledPin, HIGH);
+  } 
+  else if (ledcolor == 3) { 
+    // Mode 3: SMOOTH RGB RAINBOW GRADIENT
+    if (millis() - lastGradientUpdate >= gradientInterval) {
+      lastGradientUpdate = millis();
+      hue = (hue + 1) % 360; // Advance color wheel angle (0 to 359 degrees)
+      setHueColor(hue);
+    }
+  }
+}
+
+// Low-level helper to write inverted PWM values for Common Anode (255 - value)
+void setRGB(uint8_t r, uint8_t g, uint8_t b) {
+  analogWrite(RledPin, 255 - r);
+  analogWrite(GledPin, 255 - g);
+  analogWrite(BledPin, 255 - b);
+}
+
+// Converts 0-359 degree Hue angle into smooth RGB color values
+void setHueColor(uint16_t hueAngle) {
+  uint8_t r, g, b;
+
+  if (hueAngle < 120) { 
+    r = (120 - hueAngle) * 255 / 120;
+    g = hueAngle * 255 / 120;
+    b = 0;
+  } else if (hueAngle < 240) { 
+    r = 0;
+    g = (240 - hueAngle) * 255 / 120;
+    b = (hueAngle - 120) * 255 / 120;
+  } else { 
+    r = (hueAngle - 240) * 255 / 120;
+    g = 0;
+    b = (360 - hueAngle) * 255 / 120;
+  }
+
+  setRGB(r, g, b);
+}
